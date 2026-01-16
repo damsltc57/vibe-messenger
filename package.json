@@ -1,0 +1,33 @@
+{
+  "name": "vibe-messenger",
+  "version": "1.0.0",
+  "description": "Vibe Messenger - Application Desktop pour Messenger",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.vibemessenger.app",
+    "productName": "Vibe Messenger",
+    "directories": {
+      "buildResources": "build"
+    },
+    "mac": {
+      "category": "public.app-category.social-networking",
+      "icon": "build/icon.png"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
