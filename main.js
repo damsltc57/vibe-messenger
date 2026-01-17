@@ -31,16 +31,27 @@ function cleanServiceWorkerCache() {
 cleanServiceWorkerCache();
 
 let mainWindow;
+let lastNotification = null;
 
 // Handle native notifications from renderer
 ipcMain.on('show-notification', (event, { title, body, icon }) => {
   if (Notification.isSupported()) {
+    // Check if this is a duplicate of the last notification
+    // We compare title and body to ensure we don't block different messages
+    if (lastNotification && lastNotification.title === title && lastNotification.body === body) {
+      console.log('Blocking duplicate notification:', title);
+      return;
+    }
+
     const notification = new Notification({
       title: title || 'Messenger',
       body: body || '',
       icon: icon || undefined,
       silent: false
     });
+
+    // Save this notification as the last one shown
+    lastNotification = { title, body };
 
     notification.on('click', () => {
       // Focus the window when notification is clicked
@@ -104,6 +115,12 @@ function createWindow() {
   // Handle window closed
   mainWindow.on('closed', () => {
     mainWindow = null;
+  });
+
+  // Reset lastNotification when window is focused
+  // This allows the user to see the notification again if they receive it after looking at the app
+  mainWindow.on('focus', () => {
+    lastNotification = null;
   });
 
   // Handle new window requests (open in same window for login flow)
