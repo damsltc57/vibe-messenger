@@ -7,6 +7,29 @@ app.setName('Vibe Messenger');
 // Set userData path to ensure session persistence (must be before app ready)
 app.setPath('userData', path.join(app.getPath('appData'), 'MessengerDesktop'));
 
+// Clean corrupted Service Worker cache on startup
+const fs = require('fs');
+const userDataPath = app.getPath('userData');
+
+function cleanServiceWorkerCache() {
+  const swPath = path.join(userDataPath, 'Service Worker');
+  const cachePath = path.join(userDataPath, 'Cache');
+
+  try {
+    // Check if Service Worker directory exists and try to clean if corrupted
+    if (fs.existsSync(swPath)) {
+      // Remove the entire Service Worker directory
+      fs.rmSync(swPath, { recursive: true, force: true });
+      console.log('Service Worker cache cleaned successfully');
+    }
+  } catch (err) {
+    console.error('Error cleaning Service Worker cache:', err);
+  }
+}
+
+// Clean cache before app is ready to avoid corruption errors
+cleanServiceWorkerCache();
+
 let mainWindow;
 
 // Handle native notifications from renderer
@@ -46,7 +69,8 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       // Allow running in the background
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      devTools: false // Disable developer tools
     },
     // App appearance
     title: 'Vibe Messenger',
@@ -74,6 +98,7 @@ function createWindow() {
   // Show window when ready
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    checkAndPromptForAutoLaunch(mainWindow);
   });
 
   // Handle window closed
@@ -117,13 +142,17 @@ app.whenReady().then(async () => {
     console.log('Notification permission status:', status);
 
     // Show a test notification to trigger permission dialog
-    if (Notification.isSupported()) {
+    // Show notification only on first launch
+    const settings = getSettings();
+    if (Notification.isSupported() && !settings.hasShownNotificationOnce) {
       const testNotification = new Notification({
         title: 'Messenger Desktop',
         body: 'Les notifications sont activées !',
         silent: true
       });
       testNotification.show();
+      settings.hasShownNotificationOnce = true;
+      saveSettings(settings);
     }
   }
 
@@ -153,3 +182,61 @@ app.on('certificate-error', (event, webContents, url, error, certificate, callba
     callback(false);
   }
 });
+
+const settingsPath = path.join(app.getPath('userData'), 'settings.json');
+
+function getSettings() {
+  try {
+    if (fs.existsSync(settingsPath)) {
+      return JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    }
+  } catch (err) {
+    console.error('Error reading settings:', err);
+  }
+  return {};
+}
+
+function saveSettings(settings) {
+  try {
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  } catch (err) {
+    console.error('Error saving settings:', err);
+  }
+}
+
+async function checkAndPromptForAutoLaunch(window) {
+  const settings = getSettings();
+  const loginSettings = app.getLoginItemSettings();
+
+  // If already set to open at login, or if we already asked and user said no (saved in settings), skip
+  if (loginSettings.openAtLogin || settings.hasAskedToLaunchAtStartup) {
+    return;
+  }
+
+  const { dialog } = require('electron');
+
+  const { response, checkboxChecked } = await dialog.showMessageBox(window, {
+    type: 'question',
+    buttons: ['Oui, lancer au démarrage', 'Non, pas maintenant'],
+    defaultId: 0,
+    title: 'Démarrage automatique',
+    message: 'Voulez-vous lancer Vibe Messenger automatiquement au démarrage de votre ordinateur ?',
+    detail: 'Vous ne manquerez aucun message important.',
+    checkboxLabel: 'Ne plus me demander',
+    checked: false,
+  });
+
+  if (response === 0) { // Oui
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      openAsHidden: false, // Optional: start hidden
+      path: app.getPath('exe'),
+    });
+  }
+
+  // Save that we asked if user said Yes OR if they checked "Don't ask again"
+  if (response === 0 || checkboxChecked) {
+    settings.hasAskedToLaunchAtStartup = true;
+    saveSettings(settings);
+  }
+}
